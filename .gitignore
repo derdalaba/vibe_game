@@ -1,6 +1,6 @@
-build
+build/*
 extern/glfw/*
 extern/VulkanSDK/*
 extern/SDL2/*
 CMakeCache.txt
-CMakeFiles
+CMakeFiles/*
