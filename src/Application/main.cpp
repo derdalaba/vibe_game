@@ -9,23 +9,13 @@ int main() {
         return -1;
     }
 
-    // 2. Create a dummy window for the device initialization test
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Vibe Game", NULL, NULL);
-    if (!window) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
-
     // 3. Initialize the Renderer/Vulkan Device
-    Renderer::Device device; // Assuming VulkanDevice is accessible like this
-    device.initialize(window);
+    Renderer::Device device;
+    device.initialize();
+
+    device.run();
 
     std::cout << "Application initialization complete. Vulkan test function was called." << std::endl;
-
-    // Cleanup (simplified)
-    glfwDestroyWindow(window);
-    glfwTerminate();
 
     return 0;
 }

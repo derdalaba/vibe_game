@@ -28,9 +28,8 @@ add_optional_module(extern/SDL2 External::SDL2)    # External Dependencies first
 
 find_package(Vulkan REQUIRED)
 if (Vulkan_FOUND)
+	set(ENABLE_CPP20_MODULE ON)
 	message(STATUS "Vulkan SDK found and configured.")
-else()
-	message(FATAL_ERROR "Vulkan SDK not found. Please ensure it is installed and accessible to CMake.")
 endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/CMake")
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)

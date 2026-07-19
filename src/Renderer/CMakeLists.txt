@@ -17,3 +17,30 @@ target_include_directories(Renderer PUBLIC
 # a) The compiler knows where Core headers are.
 # b) The linker knows about all the symbols defined in the Core library.
 target_link_libraries(Renderer PUBLIC Core Vulkan::Vulkan External::SDL2 External::GLFW) 
+
+cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH PARENT_DIR)
+set (SLANGC_EXECUTABLE I:/VulkanSDK/Bin/slangc.exe)
+function (add_slang_shader_target TARGET)
+  cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
+  set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/Shaders)
+  set (ENTRY_POINTS -entry vertMain -entry fragMain)
+  add_custom_command (
+          OUTPUT ${SHADERS_DIR}
+          COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADERS_DIR}
+  )
+  add_custom_command (
+          OUTPUT  ${SHADERS_DIR}/slang.spv
+          COMMAND ${SLANGC_EXECUTABLE} ${SHADER_SOURCES} -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name ${ENTRY_POINTS} -o slang.spv
+          WORKING_DIRECTORY ${SHADERS_DIR}
+          DEPENDS ${SHADERS_DIR} ${SHADER_SOURCES}
+          COMMENT "Compiling Slang Shaders"
+          VERBATIM
+  )
+  add_custom_target (${TARGET} DEPENDS ${SHADERS_DIR}/slang.spv)
+  MESSAGE(STATUS "Added Slang shader target: ${TARGET} with sources: ${SHADER_SOURCES}")
+endfunction()
+MESSAGE(STATUS "PARENT_DIR: ${PARENT_DIR}")
+MESSAGE(STATUS "SLANGC_EXECUTABLE: ${SLANGC_EXECUTABLE}")
+set (SHADER_SLANG_SOURCES ${PARENT_DIR}/Shaders/triangle/shader.slang)
+add_slang_shader_target( triangle SOURCES ${SHADER_SLANG_SOURCES})
+add_dependencies(Renderer triangle)
