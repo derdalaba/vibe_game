@@ -4,3 +4,4 @@ extern/VulkanSDK/*
 extern/SDL2/*
 CMakeCache.txt
 CMakeFiles/*
+.vscode/
