@@ -1,6 +1,7 @@
 #include <iostream>
-#include "Device.hpp" // Assuming this header exists and is accessible via Renderer/Core includes
-#include "GLFW/glfw3.h" // For window creation
+
+#include "Device.hpp"  // Assuming this header exists and is accessible via Renderer/Core includes
+#include "GLFW/glfw3.h"  // For window creation
 
 int main() {
     // 1. Initialize GLFW (required for Vulkan surface)
@@ -15,7 +16,9 @@ int main() {
 
     device.run();
 
-    std::cout << "Application initialization complete. Vulkan test function was called." << std::endl;
+    std::cout << "Application initialization complete. Vulkan test function "
+                 "was called."
+              << std::endl;
 
     return 0;
 }

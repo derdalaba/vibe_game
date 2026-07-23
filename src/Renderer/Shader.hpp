@@ -1,7 +1,8 @@
 #pragma once
 
-#include <string>
 #include <fstream>
+#include <string>
+#include <utility>
 
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
@@ -11,17 +12,19 @@
 namespace Renderer {
 
 class Shader {
-public:
+   public:
     Shader(const std::string& spirvFilePath, const vk::raii::Device& device);
     ~Shader();
+    Shader(Shader&&) noexcept;
+    Shader& operator=(Shader&&) noexcept;
+    Shader(const Shader&) = delete;
+    Shader& operator=(const Shader&) = delete;
 
-private:
+   private:
+    std::vector<char> readSPIRVFile(const std::string& filePath);
 
-    std::vector<char> readSPIRVFile(const std::string& filePath); 
-
-private:
+   private:
     vk::PipelineShaderStageCreateInfo shaderStages[2];
-    vk::raii::ShaderModule mShaderModule;
-    
+    vk::raii::ShaderModule mShaderModule = nullptr;
 };
-} // namespace Renderer
+}  // namespace Renderer
