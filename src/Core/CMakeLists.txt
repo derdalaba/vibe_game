@@ -19,10 +19,8 @@ else()
     add_library(Core STATIC ${core_placeholder_source})
 endif()
 
-# Tell consumers where to find Core's header files
 target_include_directories(Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# Set necessary compile flags (e.g., performance, warnings)
 target_compile_options(Core PRIVATE -Wall -Wextra) 
