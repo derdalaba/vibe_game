@@ -282,8 +282,7 @@ void Device::create_device() {
 }
 
 void Device::create_graphics_pipeline() {
-    mShaders.emplace_back(
-        "I:\\git\\vibe_game\\src\\Renderer\\Shaders\\triangle.spv",
-        mLogicalDevice);
+    mShaders.emplace_back(std::string(SHADER_DIR) + "/triangle.spv",
+                          mLogicalDevice);
 }
 }  // namespace Renderer

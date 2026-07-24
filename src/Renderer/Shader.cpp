@@ -11,16 +11,14 @@ Shader::Shader(const std::string& spirvFilePath,
         .pCode = reinterpret_cast<const uint32_t*>(spirvCode.data())};
     mShaderModule = vk::raii::ShaderModule(device, createInfo);
 
-    vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+    shaderStages[0] = vk::PipelineShaderStageCreateInfo{
         .stage = vk::ShaderStageFlagBits::eVertex,
         .module = mShaderModule,
         .pName = "vertMain"};
-    vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+    shaderStages[1] = vk::PipelineShaderStageCreateInfo{
         .stage = vk::ShaderStageFlagBits::eFragment,
         .module = mShaderModule,
         .pName = "fragMain"};
-    vk::PipelineShaderStageCreateInfo mShaderStages[] = {vertShaderStageInfo,
-                                                         fragShaderStageInfo};
 }
 
 Shader::~Shader() {

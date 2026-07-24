@@ -19,7 +19,15 @@ target_include_directories(Renderer PUBLIC
 target_link_libraries(Renderer PUBLIC Core Vulkan::Vulkan External::SDL2 External::GLFW) 
 
 cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH PARENT_DIR)
-set (SLANGC_EXECUTABLE I:/VulkanSDK/Bin/slangc.exe)
+find_program(SLANGC_EXECUTABLE
+    NAMES slangc slangc.exe
+    HINTS "$ENV{VULKAN_SDK}/Bin"
+)
+if (NOT SLANGC_EXECUTABLE)
+    message(FATAL_ERROR "slangc not found. Ensure the VULKAN_SDK environment variable points to a Vulkan SDK install containing Bin/slangc.exe")
+endif()
+
+target_compile_definitions(Renderer PRIVATE SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Shaders")
 function (add_slang_shader_target TARGET SHADER_NAME)
   cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
   set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/Shaders)
