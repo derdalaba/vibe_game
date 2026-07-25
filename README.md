@@ -21,3 +21,5 @@ The root CMake configuration is intentionally tolerant of a partial workspace wh
 ## Notes
 
 If you add the missing engine modules later, the root build will automatically use them once their `CMakeLists.txt` files and source files exist.
+--
+The Project is based on https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/02_Graphics_pipeline_basics/02_Fixed_functions.html
