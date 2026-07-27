@@ -23,8 +23,6 @@ function(add_optional_module module_path fallback_target)
 endfunction()
 
 # --- Module Inclusion (The Orchestration) ---
-# By adding these subdirectories, CMake executes their respective CMakeLists.txt
-add_optional_module(extern/SDL2 External::SDL2)    # External Dependencies first
 
 find_package(Vulkan REQUIRED)
 if (Vulkan_FOUND)

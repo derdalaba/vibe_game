@@ -11,58 +11,6 @@
 
 namespace Renderer {
 
-void Device::run() {
-    if (!glfwInit()) {
-        fprintf(stderr, "Failed to initialize GLFW\n");
-        return;
-    }
-    while (true) {
-        // Poll for and process events
-        glfwPollEvents();
-
-        if (glfwWindowShouldClose(mSurface.getWindow())) {
-            break;
-        }
-    }
-    mSurface.cleanup();
-}
-
-void Device::create_instance() {
-    constexpr vk::ApplicationInfo appInfo{
-        .pApplicationName = "Hello Triangle",
-        .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = "No Engine",
-        .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = vk::ApiVersion14};
-
-    // Get the required instance extensions from GLFW.
-    uint32_t glfwExtensionCount = 0;
-    auto glfwExtensions =
-        glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    // Check if the required GLFW extensions are supported by the Vulkan
-    // implementation.
-    auto extensionProperties = mContext.enumerateInstanceExtensionProperties();
-    for (uint32_t i = 0; i < glfwExtensionCount; ++i) {
-        if (std::ranges::none_of(
-                extensionProperties, [glfwExtension = glfwExtensions[i]](
-                                         auto const& extensionProperty) {
-                    return strcmp(extensionProperty.extensionName,
-                                  glfwExtension) == 0;
-                })) {
-            throw std::runtime_error("Required GLFW extension not supported: " +
-                                     std::string(glfwExtensions[i]));
-        }
-    }
-
-    vk::InstanceCreateInfo createInfo{
-        .pApplicationInfo = &appInfo,
-        .enabledExtensionCount = glfwExtensionCount,
-        .ppEnabledExtensionNames = glfwExtensions};
-
-    mInstance = vk::raii::Instance(mContext, createInfo);
-}
-
 void Device::select_physical_device() {
     auto physicalDevices = vk::raii::PhysicalDevices(mInstance);
     if (physicalDevices.empty()) {
@@ -100,7 +48,57 @@ void Device::select_physical_device() {
         throw std::runtime_error("failed to find a suitable GPU!");
     }
 }
+void Device::create_logical_device() {
+    if (mPhysicalDevice == VK_NULL_HANDLE) {
+        fprintf(stderr, "Error: No physical device found.\n");
+        return;
+    }
 
+    std::vector<vk::QueueFamilyProperties> queueFamilyProperties =
+        mPhysicalDevice.getQueueFamilyProperties();
+
+    uint32_t queueIndex = ~0;
+    for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size(); ++qfpIndex) {
+        if ((queueFamilyProperties[qfpIndex].queueFlags &
+             vk::QueueFlagBits::eGraphics) &&
+            mPhysicalDevice.getSurfaceSupportKHR(qfpIndex,
+                                               *mSurface.getSurface())) {
+            queueIndex = qfpIndex;
+            break;
+        }
+    }
+    if (queueIndex == ~0) {
+        throw std::runtime_error(
+            "Could not find a queue for graphics and present -> terminating");
+    }
+
+    vk::StructureChain<vk::PhysicalDeviceFeatures2,
+                       vk::PhysicalDeviceVulkan11Features,
+                       vk::PhysicalDeviceVulkan13Features,
+                       vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
+        featureChain = {
+            {},  // vk::PhysicalDeviceFeatures2
+            {.shaderDrawParameters = true},                  // vk::PhysicalDeviceVulkan11Features
+            {.dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
+            {.extendedDynamicState = true}  // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+        };
+
+    float queuePriority = 0.5f;
+    vk::DeviceQueueCreateInfo deviceQueueCreateInfo{
+        .queueFamilyIndex = queueIndex,
+        .queueCount = 1,
+        .pQueuePriorities = &queuePriority};
+    vk::DeviceCreateInfo deviceCreateInfo{
+        .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &deviceQueueCreateInfo,
+        .enabledExtensionCount =
+            static_cast<uint32_t>(mRequiredDeviceExtensions.size()),
+        .ppEnabledExtensionNames = mRequiredDeviceExtensions.data()};
+
+    mLogicalDevice = vk::raii::Device(mPhysicalDevice, deviceCreateInfo);
+    mGraphicsQueue = vk::raii::Queue(mLogicalDevice, queueIndex, 0);
+}
 void Device::create_image_views() {
     assert(mSwapChainImageViews.empty());
 

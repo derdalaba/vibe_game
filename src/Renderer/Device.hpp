@@ -21,25 +21,21 @@ namespace Renderer {
 class Device {
    public:
     void initialize();
-    void run();  // Added run method to execute the test function
+    
    private:
-    void create_instance();
     vk::raii::SurfaceKHR create_surface(GLFWwindow* window);
     void create_device();
     void select_physical_device();
-    void create_image_views();
-    void create_swap_chain();
-    void create_graphics_pipeline();
     vk::Extent2D chooseSwapExtent(
         vk::SurfaceCapabilitiesKHR const& capabilities);
+    void create_logical_device();
 
    private:
-    vk::raii::Context mContext;
-    vk::raii::Instance mInstance = nullptr;
+    std::shared_ptr<vk::raii::Context> mContext;
     vk::raii::PhysicalDevice mPhysicalDevice = nullptr;
     vk::raii::Device mLogicalDevice = nullptr;
     vk::raii::Queue mGraphicsQueue = nullptr;
-    Renderer::Surface mSurface;
+    Surface mSurface;
     std::vector<vk::Image> mSwapChainImages;
     std::vector<vk::raii::ImageView> mSwapChainImageViews;
     vk::raii::SwapchainKHR mSwapChain = nullptr;

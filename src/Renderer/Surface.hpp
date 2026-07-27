@@ -15,6 +15,15 @@ namespace Renderer {
 
 class Surface {
    public:
+    Surface() = default;
+    ~Surface() { cleanup(); }
+
+    void initialize(const vk::raii::Instance& instance);
+    const vk::raii::SurfaceKHR& getSurface() const;
+    GLFWwindow* getWindow() const;
+
+
+   private:
     void initialize(const vk::raii::Instance& instance) {
         createWindow(800, 600, "Vibe Game");
         createSurface(instance);
@@ -33,6 +42,9 @@ class Surface {
         }
     }
 
+    const vk::raii::SurfaceKHR& getSurface() const { return mSurface; }
+    GLFWwindow* getWindow() const { return mWindowHandle; }
+
     void createSurface(const vk::raii::Instance& instance) {
         if (mWindowHandle == nullptr) {
             throw std::runtime_error(
@@ -50,7 +62,7 @@ class Surface {
     void cleanup() {
         if (mSurface != nullptr) {
             mSurface =
-                nullptr;  // vk::raii::SurfaceKHR will automatically clean up
+                nullptr;
         }
         if (mWindowHandle) {
             glfwDestroyWindow(mWindowHandle);
@@ -58,12 +70,11 @@ class Surface {
             glfwTerminate();
         }
     }
-    const vk::raii::SurfaceKHR& getSurface() const { return mSurface; }
-    GLFWwindow* getWindow() const { return mWindowHandle; }
+
 
    private:
-    GLFWwindow* mWindowHandle = nullptr;      // The GLFW window handle
-    vk::raii::SurfaceKHR mSurface = nullptr;  // The Vulkan surface handle
+    GLFWwindow* mWindowHandle = nullptr;
+    vk::raii::SurfaceKHR mSurface = nullptr;
 };
 
 }  // namespace Renderer

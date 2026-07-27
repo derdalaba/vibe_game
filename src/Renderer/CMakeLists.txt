@@ -4,14 +4,17 @@ add_library(Renderer STATIC
     Shader.cpp
     SwapChain.cpp
     Surface.cpp
+    Renderer.cpp
+    VulkanBackend.cpp
 )
 
 target_include_directories(Renderer PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${Vulkan_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/extern/stb
 )
 
-target_link_libraries(Renderer PUBLIC Core Vulkan::Vulkan External::SDL2 External::GLFW) 
+target_link_libraries(Renderer PUBLIC Core Vulkan::Vulkan External::GLFW) 
 
 cmake_path(GET CMAKE_CURRENT_SOURCE_DIR PARENT_PATH PARENT_DIR)
 find_program(SLANGC_EXECUTABLE

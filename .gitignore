@@ -5,3 +5,4 @@ extern/SDL2/*
 CMakeCache.txt
 CMakeFiles/*
 .vscode/
+.agents/
