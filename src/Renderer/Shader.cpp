@@ -28,11 +28,15 @@ Shader::~Shader() {
 
 Shader::Shader(Shader&& other) noexcept {
     mShaderModule = std::move(other.mShaderModule);
+    shaderStages[0] = other.shaderStages[0];
+    shaderStages[1] = other.shaderStages[1];
 }
 
 Shader& Shader::operator=(Shader&& other) noexcept {
     if (this != &other) {
         mShaderModule = std::move(other.mShaderModule);
+        shaderStages[0] = other.shaderStages[0];
+        shaderStages[1] = other.shaderStages[1];
     }
     return *this;
 }

@@ -1,22 +1,18 @@
 #include <iostream>
 
-#include "Device.hpp"  // Assuming this header exists and is accessible via Renderer/Core includes
-#include "GLFW/glfw3.h"  // For window creation
+#include "Renderer.hpp"
 
 int main() {
-    if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
+    try {
+        Renderer::Renderer renderer;
+        while (!renderer.shouldClose()) {
+            renderer.render_frame();
+        }
+        renderer.shutdown();
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
         return -1;
     }
-
-    Renderer::Device device;
-    device.initialize();
-
-    device.run();
-
-    std::cout << "Application initialization complete. Vulkan test function "
-                 "was called."
-              << std::endl;
 
     return 0;
 }

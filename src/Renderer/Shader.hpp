@@ -20,6 +20,11 @@ class Shader {
     Shader(const Shader&) = delete;
     Shader& operator=(const Shader&) = delete;
 
+    const vk::PipelineShaderStageCreateInfo* stages() const {
+        return shaderStages;
+    }
+    static constexpr uint32_t stageCount() { return 2; }
+
    private:
     std::vector<char> readSPIRVFile(const std::string& filePath);
 
