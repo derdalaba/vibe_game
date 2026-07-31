@@ -12,6 +12,7 @@
 #include "Shader.hpp"
 #include "Surface.hpp"
 #include "SwapChain.hpp"
+#include "Vertex.hpp"
 
 namespace Renderer {
 
@@ -26,6 +27,9 @@ class VulkanBackend {
    private:
     void create_instance();
     void create_graphics_pipeline();
+    void create_vertex_buffer();
+    uint32_t findMemoryType(uint32_t typeFilter,
+                             vk::MemoryPropertyFlags properties);
     void create_command_pool_and_buffers();
     void create_sync_objects();
     void recreate_swap_chain();
@@ -51,6 +55,9 @@ class VulkanBackend {
     std::vector<vk::raii::CommandBuffer> mCommandBuffers;
     vk::raii::PipelineLayout mPipelineLayout = nullptr;
     vk::raii::Pipeline mGraphicsPipeline = nullptr;
+
+    vk::raii::Buffer mVertexBuffer = nullptr;
+    vk::raii::DeviceMemory mVertexBufferMemory = nullptr;
 
     std::vector<vk::raii::Semaphore> mPresentCompleteSemaphores;
     std::vector<vk::raii::Semaphore> mRenderFinishedSemaphores;

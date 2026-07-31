@@ -9,6 +9,11 @@
 
 namespace Renderer {
 
+static const std::vector<Vertex> kTriangleVertices = {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+
 static void framebufferResizeCallback(GLFWwindow* window, int, int) {
     auto* backend =
         static_cast<VulkanBackend*>(glfwGetWindowUserPointer(window));
@@ -27,6 +32,7 @@ VulkanBackend::VulkanBackend(std::shared_ptr<Surface> surface)
     mSwapChain.initialize(mDevice.physicalDevice(), mDevice.logicalDevice(),
                           *mSurface);
     create_graphics_pipeline();
+    create_vertex_buffer();
     create_command_pool_and_buffers();
     create_sync_objects();
 }
@@ -79,7 +85,14 @@ void VulkanBackend::create_graphics_pipeline() {
     mShaders.emplace_back(std::string(SHADER_DIR) + "/triangle.spv",
                           mDevice.logicalDevice());
 
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    auto bindingDescription = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &bindingDescription,
+        .vertexAttributeDescriptionCount =
+            static_cast<uint32_t>(attributeDescriptions.size()),
+        .pVertexAttributeDescriptions = attributeDescriptions.data()};
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
         .topology = vk::PrimitiveTopology::eTriangleList};
@@ -143,6 +156,45 @@ void VulkanBackend::create_graphics_pipeline() {
     mGraphicsPipeline = vk::raii::Pipeline(
         mDevice.logicalDevice(), nullptr,
         pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+}
+
+uint32_t VulkanBackend::findMemoryType(uint32_t typeFilter,
+                                       vk::MemoryPropertyFlags properties) {
+    vk::PhysicalDeviceMemoryProperties memProperties =
+        mDevice.physicalDevice().getMemoryProperties();
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((typeFilter & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) ==
+                properties) {
+            return i;
+        }
+    }
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
+void VulkanBackend::create_vertex_buffer() {
+    vk::DeviceSize bufferSize = sizeof(Vertex) * kTriangleVertices.size();
+
+    vk::BufferCreateInfo bufferInfo{
+        .size = bufferSize,
+        .usage = vk::BufferUsageFlagBits::eVertexBuffer,
+        .sharingMode = vk::SharingMode::eExclusive};
+    mVertexBuffer = vk::raii::Buffer(mDevice.logicalDevice(), bufferInfo);
+
+    vk::MemoryRequirements memRequirements =
+        mVertexBuffer.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex = findMemoryType(
+            memRequirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent)};
+    mVertexBufferMemory = vk::raii::DeviceMemory(mDevice.logicalDevice(), allocInfo);
+    mVertexBuffer.bindMemory(mVertexBufferMemory, 0);
+
+    void* data = mVertexBufferMemory.mapMemory(0, bufferSize);
+    memcpy(data, kTriangleVertices.data(), static_cast<size_t>(bufferSize));
+    mVertexBufferMemory.unmapMemory();
 }
 
 void VulkanBackend::create_command_pool_and_buffers() {
@@ -238,6 +290,7 @@ void VulkanBackend::record_command_buffer(uint32_t imageIndex,
                                     static_cast<float>(mSwapChain.extent().height),
                                     0.0f, 1.0f));
     cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), mSwapChain.extent()));
+    cmd.bindVertexBuffers(0, {*mVertexBuffer}, {vk::DeviceSize(0)});
     cmd.draw(3, 1, 0, 0);
     cmd.endRendering();
 
