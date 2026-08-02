@@ -28,6 +28,10 @@ class VulkanBackend {
     void create_instance();
     void create_graphics_pipeline();
     void create_vertex_buffer();
+    void copyBuffer(const vk::raii::Buffer& srcBuffer,
+                    const vk::raii::Buffer& dstBuffer,
+                    vk::DeviceSize size);
+    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
     uint32_t findMemoryType(uint32_t typeFilter,
                              vk::MemoryPropertyFlags properties);
     void create_command_pool_and_buffers();
@@ -56,7 +60,9 @@ class VulkanBackend {
     vk::raii::PipelineLayout mPipelineLayout = nullptr;
     vk::raii::Pipeline mGraphicsPipeline = nullptr;
 
+    vk::raii::Buffer mStagingBuffer = nullptr;
     vk::raii::Buffer mVertexBuffer = nullptr;
+    vk::raii::DeviceMemory mStagingBufferMemory = nullptr;
     vk::raii::DeviceMemory mVertexBufferMemory = nullptr;
 
     std::vector<vk::raii::Semaphore> mPresentCompleteSemaphores;

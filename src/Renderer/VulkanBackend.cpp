@@ -31,15 +31,19 @@ VulkanBackend::VulkanBackend(std::shared_ptr<Surface> surface)
     mDevice.initialize(mInstance, mSurface->getSurface());
     mSwapChain.initialize(mDevice.physicalDevice(), mDevice.logicalDevice(),
                           *mSurface);
+    create_command_pool_and_buffers();
     create_graphics_pipeline();
     create_vertex_buffer();
-    create_command_pool_and_buffers();
     create_sync_objects();
 }
 
-VulkanBackend::~VulkanBackend() { mDevice.logicalDevice().waitIdle(); }
+VulkanBackend::~VulkanBackend() {
+    mDevice.logicalDevice().waitIdle();
+}
 
-void VulkanBackend::notifyFramebufferResized() { mFramebufferResized = true; }
+void VulkanBackend::notifyFramebufferResized() {
+    mFramebufferResized = true;
+}
 
 void VulkanBackend::create_instance() {
     constexpr vk::ApplicationInfo appInfo{
@@ -121,37 +125,36 @@ void VulkanBackend::create_graphics_pipeline() {
 
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{
         .blendEnable = vk::False,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR |
-                          vk::ColorComponentFlagBits::eG |
-                          vk::ColorComponentFlagBits::eB |
-                          vk::ColorComponentFlagBits::eA};
+        .colorWriteMask =
+            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+            vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
     vk::PipelineColorBlendStateCreateInfo colorBlending{
         .logicOpEnable = vk::False,
         .logicOp = vk::LogicOp::eCopy,
         .attachmentCount = 1,
         .pAttachments = &colorBlendAttachment};
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{.setLayoutCount = 0,
-                                                    .pushConstantRangeCount = 0};
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+        .setLayoutCount = 0, .pushConstantRangeCount = 0};
     mPipelineLayout =
         vk::raii::PipelineLayout(mDevice.logicalDevice(), pipelineLayoutInfo);
 
     vk::Format colorFormat = mSwapChain.surfaceFormat().format;
     vk::StructureChain<vk::GraphicsPipelineCreateInfo,
                        vk::PipelineRenderingCreateInfo>
-        pipelineCreateInfoChain = {
-            {.stageCount = Shader::stageCount(),
-             .pStages = mShaders[0].stages(),
-             .pVertexInputState = &vertexInputInfo,
-             .pInputAssemblyState = &inputAssembly,
-             .pViewportState = &viewportState,
-             .pRasterizationState = &rasterizer,
-             .pMultisampleState = &multisampling,
-             .pColorBlendState = &colorBlending,
-             .pDynamicState = &dynamicState,
-             .layout = mPipelineLayout,
-             .renderPass = nullptr},
-            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat}};
+        pipelineCreateInfoChain = {{.stageCount = Shader::stageCount(),
+                                    .pStages = mShaders[0].stages(),
+                                    .pVertexInputState = &vertexInputInfo,
+                                    .pInputAssemblyState = &inputAssembly,
+                                    .pViewportState = &viewportState,
+                                    .pRasterizationState = &rasterizer,
+                                    .pMultisampleState = &multisampling,
+                                    .pColorBlendState = &colorBlending,
+                                    .pDynamicState = &dynamicState,
+                                    .layout = mPipelineLayout,
+                                    .renderPass = nullptr},
+                                   {.colorAttachmentCount = 1,
+                                    .pColorAttachmentFormats = &colorFormat}};
 
     mGraphicsPipeline = vk::raii::Pipeline(
         mDevice.logicalDevice(), nullptr,
@@ -172,29 +175,67 @@ uint32_t VulkanBackend::findMemoryType(uint32_t typeFilter,
     throw std::runtime_error("failed to find suitable memory type!");
 }
 
+void VulkanBackend::copyBuffer(vk::raii::Buffer const& srcBuffer,
+                               vk::raii::Buffer const& dstBuffer,
+                               vk::DeviceSize size) {
+    vk::CommandBufferAllocateInfo allocInfo{
+        .commandPool = mCommandPool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1};
+    vk::raii::CommandBuffer commandBuffer = std::move(
+        mDevice.logicalDevice().allocateCommandBuffers(allocInfo).front());
+
+    commandBuffer.begin(vk::CommandBufferBeginInfo{
+        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    commandBuffer.copyBuffer(srcBuffer, dstBuffer,
+                             {vk::BufferCopy{0, 0, size}});
+    commandBuffer.end();
+
+    vk::raii::Queue graphicsQueue = mDevice.graphicsQueue();
+    graphicsQueue.submit({vk::SubmitInfo{.commandBufferCount = 1,
+                                         .pCommandBuffers = &*commandBuffer}},
+                         nullptr);
+    graphicsQueue.waitIdle();
+}
+
 void VulkanBackend::create_vertex_buffer() {
     vk::DeviceSize bufferSize = sizeof(Vertex) * kTriangleVertices.size();
 
-    vk::BufferCreateInfo bufferInfo{
-        .size = bufferSize,
-        .usage = vk::BufferUsageFlagBits::eVertexBuffer,
-        .sharingMode = vk::SharingMode::eExclusive};
-    mVertexBuffer = vk::raii::Buffer(mDevice.logicalDevice(), bufferInfo);
+    std::tie(mStagingBuffer, mStagingBufferMemory) =
+        create_buffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                      vk::MemoryPropertyFlagBits::eHostVisible |
+                          vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    vk::MemoryRequirements memRequirements =
-        mVertexBuffer.getMemoryRequirements();
+    void* dataStaging = mStagingBufferMemory.mapMemory(0, bufferSize);
+    memcpy(dataStaging, kTriangleVertices.data(),
+           static_cast<size_t>(bufferSize));
+    mStagingBufferMemory.unmapMemory();
+
+    std::tie(mVertexBuffer, mVertexBufferMemory) =
+        create_buffer(bufferSize,
+                      vk::BufferUsageFlagBits::eTransferDst |
+                          vk::BufferUsageFlagBits::eVertexBuffer,
+                      vk::MemoryPropertyFlagBits::eDeviceLocal);
+    copyBuffer(mStagingBuffer, mVertexBuffer, bufferSize);
+}
+
+std::pair<vk::raii::Buffer, vk::raii::DeviceMemory>
+VulkanBackend::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                             vk::MemoryPropertyFlags properties) {
+    vk::BufferCreateInfo bufferInfo{.size = size,
+                                    .usage = usage,
+                                    .sharingMode = vk::SharingMode::eExclusive};
+    vk::raii::Buffer buffer(mDevice.logicalDevice(), bufferInfo);
+
+    vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
     vk::MemoryAllocateInfo allocInfo{
         .allocationSize = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(
-            memRequirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eHostVisible |
-                vk::MemoryPropertyFlagBits::eHostCoherent)};
-    mVertexBufferMemory = vk::raii::DeviceMemory(mDevice.logicalDevice(), allocInfo);
-    mVertexBuffer.bindMemory(mVertexBufferMemory, 0);
+        .memoryTypeIndex =
+            findMemoryType(memRequirements.memoryTypeBits, properties)};
+    vk::raii::DeviceMemory memory(mDevice.logicalDevice(), allocInfo);
+    buffer.bindMemory(memory, 0);
 
-    void* data = mVertexBufferMemory.mapMemory(0, bufferSize);
-    memcpy(data, kTriangleVertices.data(), static_cast<size_t>(bufferSize));
-    mVertexBufferMemory.unmapMemory();
+    return std::make_pair(std::move(buffer), std::move(memory));
 }
 
 void VulkanBackend::create_command_pool_and_buffers() {
@@ -263,12 +304,11 @@ void VulkanBackend::record_command_buffer(uint32_t imageIndex,
     auto& cmd = mCommandBuffers[frameIndex];
     cmd.begin(vk::CommandBufferBeginInfo{});
 
-    transition_image_layout(
-        frameIndex, imageIndex, vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal, {},
-        vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+    transition_image_layout(frameIndex, imageIndex, vk::ImageLayout::eUndefined,
+                            vk::ImageLayout::eColorAttachmentOptimal, {},
+                            vk::AccessFlagBits2::eColorAttachmentWrite,
+                            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
 
     vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
     vk::RenderingAttachmentInfo attachmentInfo{
@@ -285,21 +325,21 @@ void VulkanBackend::record_command_buffer(uint32_t imageIndex,
 
     cmd.beginRendering(renderingInfo);
     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, mGraphicsPipeline);
-    cmd.setViewport(0, vk::Viewport(0.0f, 0.0f,
-                                    static_cast<float>(mSwapChain.extent().width),
-                                    static_cast<float>(mSwapChain.extent().height),
-                                    0.0f, 1.0f));
+    cmd.setViewport(
+        0, vk::Viewport(
+               0.0f, 0.0f, static_cast<float>(mSwapChain.extent().width),
+               static_cast<float>(mSwapChain.extent().height), 0.0f, 1.0f));
     cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), mSwapChain.extent()));
     cmd.bindVertexBuffers(0, {*mVertexBuffer}, {vk::DeviceSize(0)});
     cmd.draw(kTriangleVertices.size(), 1, 0, 0);
     cmd.endRendering();
 
-    transition_image_layout(
-        frameIndex, imageIndex, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::ePresentSrcKHR,
-        vk::AccessFlagBits2::eColorAttachmentWrite, {},
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eBottomOfPipe);
+    transition_image_layout(frameIndex, imageIndex,
+                            vk::ImageLayout::eColorAttachmentOptimal,
+                            vk::ImageLayout::ePresentSrcKHR,
+                            vk::AccessFlagBits2::eColorAttachmentWrite, {},
+                            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                            vk::PipelineStageFlagBits2::eBottomOfPipe);
     cmd.end();
 }
 

@@ -12,7 +12,7 @@ namespace Renderer {
 class Device {
    public:
     void initialize(const vk::raii::Instance& instance,
-                     const vk::raii::SurfaceKHR& surface);
+                    const vk::raii::SurfaceKHR& surface);
 
     const vk::raii::PhysicalDevice& physicalDevice() const {
         return mPhysicalDevice;
@@ -22,10 +22,16 @@ class Device {
     uint32_t graphicsQueueFamilyIndex() const {
         return mGraphicsQueueFamilyIndex;
     }
+    vk::raii::CommandPool createCommandPool() const {
+        vk::CommandPoolCreateInfo poolInfo{
+            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex = mGraphicsQueueFamilyIndex};
+        return vk::raii::CommandPool(mLogicalDevice, poolInfo);
+    }
 
    private:
     void select_physical_device(const vk::raii::Instance& instance,
-                                 const vk::raii::SurfaceKHR& surface);
+                                const vk::raii::SurfaceKHR& surface);
     void create_logical_device(const vk::raii::SurfaceKHR& surface);
 
    private:
