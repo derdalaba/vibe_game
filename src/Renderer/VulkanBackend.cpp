@@ -291,7 +291,7 @@ void VulkanBackend::record_command_buffer(uint32_t imageIndex,
                                     0.0f, 1.0f));
     cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), mSwapChain.extent()));
     cmd.bindVertexBuffers(0, {*mVertexBuffer}, {vk::DeviceSize(0)});
-    cmd.draw(3, 1, 0, 0);
+    cmd.draw(kTriangleVertices.size(), 1, 0, 0);
     cmd.endRendering();
 
     transition_image_layout(
