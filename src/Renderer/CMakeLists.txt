@@ -13,7 +13,6 @@ target_include_directories(Renderer PUBLIC
     ${Vulkan_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/extern/stb
     ${CMAKE_SOURCE_DIR}/extern/glm
-    ${CMAKE_SOURCE_DIR}/extern/tinyobjloader
 )
 
 target_link_libraries(Renderer PUBLIC Core Vulkan::Vulkan External::GLFW) 
