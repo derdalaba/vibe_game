@@ -12,6 +12,8 @@ target_include_directories(Renderer PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${Vulkan_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/extern/stb
+    ${CMAKE_SOURCE_DIR}/extern/glm
+    ${CMAKE_SOURCE_DIR}/extern/tinyobjloader
 )
 
 target_link_libraries(Renderer PUBLIC Core Vulkan::Vulkan External::GLFW) 
@@ -31,7 +33,11 @@ else()
     message(STATUS "BUILD_SHADERS=OFF: shader compilation will be skipped; existing .spv files will be used if present")
 endif()
 
-target_compile_definitions(Renderer PRIVATE SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Shaders")
+target_compile_definitions(Renderer PRIVATE
+    SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Shaders"
+    TEXTURE_DIR="${PARENT_DIR}/Textures"
+    MODEL_DIR="${PARENT_DIR}/Models"
+)
 function (add_slang_shader_target TARGET SHADER_NAME)
   cmake_parse_arguments ("SHADER" "" "" "SOURCES" ${ARGN})
   set (SHADERS_DIR ${CMAKE_CURRENT_LIST_DIR}/Shaders)

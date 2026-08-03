@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <limits>
+#include <stdexcept>
 
 #include <GLFW/glfw3.h>
 
@@ -27,6 +28,36 @@ static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(
                    format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
         });
     return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
+}
+
+static vk::Format findDepthFormat(const vk::raii::PhysicalDevice& physicalDevice) {
+    static const std::vector<vk::Format> candidates = {
+        vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
+        vk::Format::eD24UnormS8Uint};
+    for (vk::Format format : candidates) {
+        vk::FormatProperties properties =
+            physicalDevice.getFormatProperties(format);
+        if (properties.optimalTilingFeatures &
+            vk::FormatFeatureFlagBits::eDepthStencilAttachment) {
+            return format;
+        }
+    }
+    throw std::runtime_error("failed to find a supported depth format!");
+}
+
+static uint32_t findMemoryType(const vk::raii::PhysicalDevice& physicalDevice,
+                               uint32_t typeFilter,
+                               vk::MemoryPropertyFlags properties) {
+    vk::PhysicalDeviceMemoryProperties memProperties =
+        physicalDevice.getMemoryProperties();
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((typeFilter & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) ==
+                properties) {
+            return i;
+        }
+    }
+    throw std::runtime_error("failed to find suitable memory type!");
 }
 
 static vk::PresentModeKHR chooseSwapPresentMode(
@@ -89,6 +120,7 @@ void SwapChain::initialize(const vk::raii::PhysicalDevice& physicalDevice,
     mSwapChain = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
     mImages = mSwapChain.getImages();
     createImageViews(device);
+    createDepthResources(physicalDevice, device);
 }
 
 void SwapChain::createImageViews(const vk::raii::Device& device) {
@@ -102,6 +134,41 @@ void SwapChain::createImageViews(const vk::raii::Device& device) {
         imageViewCreateInfo.image = image;
         mImageViews.emplace_back(device, imageViewCreateInfo);
     }
+}
+
+void SwapChain::createDepthResources(
+    const vk::raii::PhysicalDevice& physicalDevice,
+    const vk::raii::Device& device) {
+    mDepthFormat = findDepthFormat(physicalDevice);
+
+    vk::ImageCreateInfo imageInfo{
+        .imageType = vk::ImageType::e2D,
+        .format = mDepthFormat,
+        .extent = {mExtent.width, mExtent.height, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined};
+    mDepthImage = vk::raii::Image(device, imageInfo);
+
+    vk::MemoryRequirements memRequirements = mDepthImage.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex =
+            findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
+                          vk::MemoryPropertyFlagBits::eDeviceLocal)};
+    mDepthImageMemory = vk::raii::DeviceMemory(device, allocInfo);
+    mDepthImage.bindMemory(mDepthImageMemory, 0);
+
+    vk::ImageViewCreateInfo viewInfo{
+        .image = mDepthImage,
+        .viewType = vk::ImageViewType::e2D,
+        .format = mDepthFormat,
+        .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1}};
+    mDepthImageView = vk::raii::ImageView(device, viewInfo);
 }
 
 }  // namespace Renderer

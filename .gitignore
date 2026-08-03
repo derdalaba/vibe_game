@@ -1,5 +1,7 @@
 build/*
 extern/glfw/*
+extern/glm/*
+extern/tinyobjloader/*
 extern/VulkanSDK/*
 extern/SDL2/*
 CMakeCache.txt

@@ -32,12 +32,17 @@ class SwapChain {
         return mImageViews;
     }
     const std::vector<vk::Image>& images() const { return mImages; }
+    const vk::Image& depthImage() const { return *mDepthImage; }
+    const vk::raii::ImageView& depthImageView() const { return mDepthImageView; }
+    vk::Format depthFormat() const { return mDepthFormat; }
 
    private:
     vk::Extent2D chooseExtent(
         const Surface& surface,
         vk::SurfaceCapabilitiesKHR const& capabilities) const;
     void createImageViews(const vk::raii::Device& device);
+    void createDepthResources(const vk::raii::PhysicalDevice& physicalDevice,
+                               const vk::raii::Device& device);
 
    private:
     vk::raii::SwapchainKHR mSwapChain = nullptr;
@@ -45,5 +50,10 @@ class SwapChain {
     std::vector<vk::raii::ImageView> mImageViews;
     vk::SurfaceFormatKHR mSurfaceFormat;
     vk::Extent2D mExtent;
+
+    vk::raii::Image mDepthImage = nullptr;
+    vk::raii::DeviceMemory mDepthImageMemory = nullptr;
+    vk::raii::ImageView mDepthImageView = nullptr;
+    vk::Format mDepthFormat = vk::Format::eUndefined;
 };
 }  // namespace Renderer

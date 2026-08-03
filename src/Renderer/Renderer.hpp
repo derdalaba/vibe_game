@@ -16,6 +16,9 @@ class Renderer {
     void render_frame();
     void shutdown();
 
+    bool isKeyPressed(int key) const;
+    void setCameraPosition(float x, float y, float z);
+
    private:
     std::shared_ptr<Surface> mSurface;
     std::unique_ptr<VulkanBackend> mBackend;

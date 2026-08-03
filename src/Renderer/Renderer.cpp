@@ -24,4 +24,12 @@ void Renderer::shutdown() {
     mSurface.reset();
 }
 
+bool Renderer::isKeyPressed(int key) const {
+    return mSurface->isKeyPressed(key);
+}
+
+void Renderer::setCameraPosition(float x, float y, float z) {
+    mBackend->setCameraPosition(x, y, z);
+}
+
 }  // namespace Renderer

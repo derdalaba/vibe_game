@@ -77,7 +77,7 @@ void Device::create_logical_device(const vk::raii::SurfaceKHR& surface) {
                        vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
-            {},  // vk::PhysicalDeviceFeatures2
+            {.features = {.samplerAnisotropy = true}},  // vk::PhysicalDeviceFeatures2
             {.shaderDrawParameters =
                  true},  // vk::PhysicalDeviceVulkan11Features
             {.synchronization2 = true,
