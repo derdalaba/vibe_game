@@ -2,6 +2,10 @@
 set(core_sources
     Math.cpp
     Vector3.cpp
+    Animation.cpp
+    Skeleton.cpp
+    GltfLoader.cpp
+    tiny_gltf_impl.cpp
 )
 
 set(core_available_sources)
@@ -21,6 +25,14 @@ endif()
 
 target_include_directories(Core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/extern/glm
+    ${CMAKE_SOURCE_DIR}/extern/tinygltf
 )
 
-target_compile_options(Core PRIVATE -Wall -Wextra) 
+target_compile_options(Core PRIVATE -Wall -Wextra)
+
+# tinygltf (and the nlohmann json.hpp it bundles) is third-party and noisy under
+# -Wall -Wextra; silence just that TU rather than weakening Core's flags.
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tiny_gltf_impl.cpp")
+    set_source_files_properties(tiny_gltf_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+endif()

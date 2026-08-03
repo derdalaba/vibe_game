@@ -10,22 +10,41 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
-
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 
 namespace Renderer {
 
+#ifdef NDEBUG
+static constexpr bool kEnableValidation = false;
+#else
+static constexpr bool kEnableValidation = true;
+#endif
+
 struct UniformBufferObject {
-    glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
 };
+
+// Must mirror PushConstants in src/Shaders/box/shader.slang. The emitted SPIR-V
+// places `model` at offset 0 and `jointOffset` at offset 64.
+struct PushConstants {
+    glm::mat4 model;
+    uint32_t jointOffset;
+};
+static_assert(sizeof(PushConstants) == 68,
+              "push constant layout must match the shader's std430 offsets");
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT* callbackData, void*) {
+    fprintf(stderr, "[vulkan] %s\n", callbackData->pMessage);
+    return VK_FALSE;
+}
 
 static void framebufferResizeCallback(GLFWwindow* window, int, int) {
     auto* backend =
@@ -55,6 +74,7 @@ VulkanBackend::VulkanBackend(std::shared_ptr<Surface> surface)
     create_texture_image_view();
     create_texture_sampler();
     create_uniform_buffers();
+    create_joint_buffers();
     create_descriptor_pool();
     create_descriptor_sets();
     create_sync_objects();
@@ -72,6 +92,72 @@ void VulkanBackend::setCameraPosition(float x, float y, float z) {
     mCameraPosition[0] = x;
     mCameraPosition[1] = y;
     mCameraPosition[2] = z;
+}
+
+void VulkanBackend::addObject(float x, float y, float z) {
+    RenderObject object;
+    object.transform.translation = glm::vec3(x, y, z);
+    mObjects.push_back(object);
+}
+
+void VulkanBackend::setObjectClip(size_t objectIndex,
+                                  const Core::AnimationClip* clip,
+                                  float phaseOffset) {
+    if (objectIndex >= mObjects.size()) {
+        throw std::runtime_error("setObjectClip: object index out of range");
+    }
+    mObjects[objectIndex].placementClip = clip;
+    mObjects[objectIndex].animationOffset = phaseOffset;
+}
+
+void VulkanBackend::update(float deltaTime) {
+    // Rigid (per-object placement) animation: sample each object's own clip.
+    // Node 0 of a placement clip is the object's transform by convention.
+    for (auto& object : mObjects) {
+        if (object.placementClip == nullptr) {
+            continue;
+        }
+        object.animationTime += deltaTime;
+        const float duration = object.placementClip->duration;
+        float time = object.animationTime + object.animationOffset;
+        if (duration > 0.0f) {
+            time = std::fmod(time, duration);
+        }
+        std::vector<Core::Transform> nodes(1, object.transform);
+        Core::sample(*object.placementClip, time, nodes);
+        object.transform = nodes[0];
+    }
+
+    // Skinned pose, per instance: each object plays the model's glTF clip at
+    // its own phase, so every instance needs its own block of joint matrices.
+    // They are concatenated into one buffer and selected at draw time via the
+    // jointOffset push constant.
+    if (!mModel.skeleton.isSkinned() || mModel.clips.empty()) {
+        return;
+    }
+    if (mObjects.size() > kMaxSkinnedInstances) {
+        throw std::runtime_error(
+            "more skinned instances than the joint buffer was sized for; raise "
+            "kMaxSkinnedInstances");
+    }
+
+    mSkinTime += deltaTime;
+    const Core::AnimationClip& clip = mModel.clips[0];
+    const size_t joints = mModel.skeleton.jointCount();
+    mJointMatrices.assign(mObjects.size() * joints, glm::mat4(1.0f));
+
+    std::vector<glm::mat4> instanceMatrices;
+    for (size_t i = 0; i < mObjects.size(); ++i) {
+        float time = mSkinTime + mObjects[i].animationOffset;
+        if (clip.duration > 0.0f) {
+            time = std::fmod(time, clip.duration);
+        }
+        mModel.skeleton.localPose = mModel.skeleton.restPose;
+        Core::sample(clip, time, mModel.skeleton.localPose);
+        Core::computeJointMatrices(mModel.skeleton, instanceMatrices);
+        std::copy(instanceMatrices.begin(), instanceMatrices.end(),
+                  mJointMatrices.begin() + static_cast<ptrdiff_t>(i * joints));
+    }
 }
 
 void VulkanBackend::create_instance() {
@@ -106,12 +192,38 @@ void VulkanBackend::create_instance() {
         }
     }
 
+    std::vector<const char*> extensions(glfwExtensions,
+                                        glfwExtensions + glfwExtensionCount);
+    std::vector<const char*> layers;
+    if (kEnableValidation) {
+        extensions.push_back(vk::EXTDebugUtilsExtensionName);
+        layers.push_back("VK_LAYER_KHRONOS_validation");
+    }
+
     vk::InstanceCreateInfo createInfo{
         .pApplicationInfo = &appInfo,
-        .enabledExtensionCount = glfwExtensionCount,
-        .ppEnabledExtensionNames = glfwExtensions};
+        .enabledLayerCount = static_cast<uint32_t>(layers.size()),
+        .ppEnabledLayerNames = layers.data(),
+        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
+        .ppEnabledExtensionNames = extensions.data()};
 
     mInstance = vk::raii::Instance(mContext, createInfo);
+
+    if (kEnableValidation) {
+        vk::DebugUtilsMessengerCreateInfoEXT messengerInfo{
+            .messageSeverity =
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+            .messageType =
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+            .pfnUserCallback =
+                reinterpret_cast<vk::PFN_DebugUtilsMessengerCallbackEXT>(
+                    debugCallback)};
+        mDebugMessenger =
+            vk::raii::DebugUtilsMessengerEXT(mInstance, messengerInfo);
+    }
 }
 
 void VulkanBackend::create_descriptor_set_layout() {
@@ -125,8 +237,15 @@ void VulkanBackend::create_descriptor_set_layout() {
         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
         .descriptorCount = 1,
         .stageFlags = vk::ShaderStageFlagBits::eFragment};
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{uboBinding,
-                                                           samplerBinding};
+    // Reading a storage buffer in the vertex stage needs no device feature;
+    // only stores/atomics would require vertexPipelineStoresAndAtomics.
+    vk::DescriptorSetLayoutBinding jointBinding{
+        .binding = 2,
+        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .descriptorCount = 1,
+        .stageFlags = vk::ShaderStageFlagBits::eVertex};
+    std::array<vk::DescriptorSetLayoutBinding, 3> bindings{
+        uboBinding, samplerBinding, jointBinding};
     vk::DescriptorSetLayoutCreateInfo layoutInfo{
         .bindingCount = static_cast<uint32_t>(bindings.size()),
         .pBindings = bindings.data()};
@@ -138,8 +257,8 @@ void VulkanBackend::create_graphics_pipeline() {
     mShaders.emplace_back(std::string(SHADER_DIR) + "/box.spv",
                           mDevice.logicalDevice());
 
-    auto bindingDescription = Vertex::getBindingDescription();
-    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+    auto bindingDescription = vertexBindingDescription();
+    auto attributeDescriptions = vertexAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDescription,
@@ -164,7 +283,7 @@ void VulkanBackend::create_graphics_pipeline() {
         .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
         .cullMode = vk::CullModeFlagBits::eBack,
-        .frontFace = vk::FrontFace::eClockwise,
+        .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = vk::False,
         .lineWidth = 1.0f};
 
@@ -190,10 +309,15 @@ void VulkanBackend::create_graphics_pipeline() {
         .depthBoundsTestEnable = vk::False,
         .stencilTestEnable = vk::False};
 
+    vk::PushConstantRange pushConstantRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .offset = 0,
+        .size = sizeof(PushConstants)};
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
         .setLayoutCount = 1,
         .pSetLayouts = &*mDescriptorSetLayout,
-        .pushConstantRangeCount = 0};
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange};
     mPipelineLayout =
         vk::raii::PipelineLayout(mDevice.logicalDevice(), pipelineLayoutInfo);
 
@@ -223,41 +347,15 @@ void VulkanBackend::create_graphics_pipeline() {
 }
 
 void VulkanBackend::load_model() {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    std::string modelPath = std::string(MODEL_DIR) + "/cube.obj";
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                         modelPath.c_str())) {
-        throw std::runtime_error("failed to load model: " + warn + err);
+    // Asset loading lives in Core and returns Vulkan-free plain data; this
+    // backend only uploads it. glTF primitives are already indexed, so no
+    // vertex de-duplication pass is needed here.
+    mModel = Core::loadGltf(std::string(MODEL_DIR) + "/SimpleSkin.gltf");
+    if (mModel.mesh.vertices.empty() || mModel.mesh.indices.empty()) {
+        throw std::runtime_error("loaded model has no geometry");
     }
-
-    std::unordered_map<Vertex, uint32_t, VertexHash> uniqueVertices;
-
-    for (const auto& shape : shapes) {
-        for (const auto& index : shape.mesh.indices) {
-            Vertex vertex{};
-            vertex.pos[0] = attrib.vertices[3 * index.vertex_index + 0];
-            vertex.pos[1] = attrib.vertices[3 * index.vertex_index + 1];
-            vertex.pos[2] = attrib.vertices[3 * index.vertex_index + 2];
-
-            vertex.texCoord[0] = attrib.texcoords[2 * index.texcoord_index + 0];
-            vertex.texCoord[1] =
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1];
-
-            auto it = uniqueVertices.find(vertex);
-            if (it == uniqueVertices.end()) {
-                uint32_t newIndex = static_cast<uint32_t>(mVertices.size());
-                uniqueVertices[vertex] = newIndex;
-                mVertices.push_back(vertex);
-                mIndices.push_back(newIndex);
-            } else {
-                mIndices.push_back(it->second);
-            }
-        }
-    }
+    mJointMatrices.assign(std::max<size_t>(mModel.skeleton.jointCount(), 1),
+                          glm::mat4(1.0f));
 }
 
 uint32_t VulkanBackend::findMemoryType(uint32_t typeFilter,
@@ -331,7 +429,8 @@ void VulkanBackend::copyBufferToImage(const vk::raii::Buffer& buffer,
 }
 
 void VulkanBackend::create_vertex_buffer() {
-    vk::DeviceSize bufferSize = sizeof(Vertex) * mVertices.size();
+    vk::DeviceSize bufferSize =
+        sizeof(Core::Vertex) * mModel.mesh.vertices.size();
 
     std::tie(mStagingBuffer, mStagingBufferMemory) =
         create_buffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
@@ -339,7 +438,8 @@ void VulkanBackend::create_vertex_buffer() {
                           vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* dataStaging = mStagingBufferMemory.mapMemory(0, bufferSize);
-    memcpy(dataStaging, mVertices.data(), static_cast<size_t>(bufferSize));
+    memcpy(dataStaging, mModel.mesh.vertices.data(),
+           static_cast<size_t>(bufferSize));
     mStagingBufferMemory.unmapMemory();
 
     std::tie(mVertexBuffer, mVertexBufferMemory) =
@@ -351,7 +451,8 @@ void VulkanBackend::create_vertex_buffer() {
 }
 
 void VulkanBackend::create_index_buffer() {
-    vk::DeviceSize bufferSize = sizeof(uint32_t) * mIndices.size();
+    vk::DeviceSize bufferSize =
+        sizeof(uint32_t) * mModel.mesh.indices.size();
 
     std::tie(mStagingBuffer, mStagingBufferMemory) =
         create_buffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc,
@@ -359,7 +460,8 @@ void VulkanBackend::create_index_buffer() {
                           vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* dataStaging = mStagingBufferMemory.mapMemory(0, bufferSize);
-    memcpy(dataStaging, mIndices.data(), static_cast<size_t>(bufferSize));
+    memcpy(dataStaging, mModel.mesh.indices.data(),
+           static_cast<size_t>(bufferSize));
     mStagingBufferMemory.unmapMemory();
 
     std::tie(mIndexBuffer, mIndexBufferMemory) =
@@ -520,11 +622,57 @@ void VulkanBackend::create_uniform_buffers() {
     }
 }
 
+void VulkanBackend::create_joint_buffers() {
+    // One persistently-mapped storage buffer per frame in flight, holding the
+    // joint matrices of every instance back-to-back. Same idiom as the uniform
+    // buffers: mapped once, memcpy'd per frame, host-coherent so no flush.
+    // Deliberately not using copyBuffer() here -- that helper does a blocking
+    // one-shot submit and is init-only.
+    mJointsPerInstance =
+        static_cast<uint32_t>(std::max<size_t>(mModel.skeleton.jointCount(), 1));
+    mJointBufferSize = sizeof(glm::mat4) *
+                       static_cast<vk::DeviceSize>(mJointsPerInstance) *
+                       kMaxSkinnedInstances;
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
+        auto [buffer, memory] =
+            create_buffer(mJointBufferSize,
+                          vk::BufferUsageFlagBits::eStorageBuffer,
+                          vk::MemoryPropertyFlagBits::eHostVisible |
+                              vk::MemoryPropertyFlagBits::eHostCoherent);
+        mJointBuffersMapped.push_back(memory.mapMemory(0, mJointBufferSize));
+        mJointBuffers.push_back(std::move(buffer));
+        mJointBuffersMemory.push_back(std::move(memory));
+    }
+
+    // Start from identity so an unposed frame renders the bind pose rather
+    // than collapsing the mesh to the origin.
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
+        std::vector<glm::mat4> identity(
+            static_cast<size_t>(mJointsPerInstance) * kMaxSkinnedInstances,
+            glm::mat4(1.0f));
+        memcpy(mJointBuffersMapped[i], identity.data(),
+               static_cast<size_t>(mJointBufferSize));
+    }
+}
+
+void VulkanBackend::update_joint_buffer(uint32_t frameIndex) {
+    if (mJointBuffersMapped.empty() || mJointMatrices.empty()) {
+        return;
+    }
+    const size_t bytes = std::min<size_t>(
+        mJointMatrices.size() * sizeof(glm::mat4),
+        static_cast<size_t>(mJointBufferSize));
+    memcpy(mJointBuffersMapped[frameIndex], mJointMatrices.data(), bytes);
+}
+
 void VulkanBackend::create_descriptor_pool() {
-    std::array<vk::DescriptorPoolSize, 2> poolSizes{
+    std::array<vk::DescriptorPoolSize, 3> poolSizes{
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eUniformBuffer,
                               .descriptorCount = kMaxFramesInFlight},
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eCombinedImageSampler,
+                              .descriptorCount = kMaxFramesInFlight},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer,
                               .descriptorCount = kMaxFramesInFlight}};
     vk::DescriptorPoolCreateInfo poolInfo{
         .maxSets = kMaxFramesInFlight,
@@ -551,7 +699,9 @@ void VulkanBackend::create_descriptor_sets() {
             .sampler = mTextureSampler,
             .imageView = mTextureImageView,
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-        std::array<vk::WriteDescriptorSet, 2> writes{
+        vk::DescriptorBufferInfo jointInfo{
+            .buffer = mJointBuffers[i], .offset = 0, .range = mJointBufferSize};
+        std::array<vk::WriteDescriptorSet, 3> writes{
             vk::WriteDescriptorSet{.dstSet = mDescriptorSets[i],
                                   .dstBinding = 0,
                                   .descriptorCount = 1,
@@ -563,22 +713,23 @@ void VulkanBackend::create_descriptor_sets() {
                 .dstBinding = 1,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &imageInfo}};
+                .pImageInfo = &imageInfo},
+            vk::WriteDescriptorSet{
+                .dstSet = mDescriptorSets[i],
+                .dstBinding = 2,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .pBufferInfo = &jointInfo}};
         mDevice.logicalDevice().updateDescriptorSets(writes, nullptr);
     }
 }
 
 void VulkanBackend::update_uniform_buffer(uint32_t frameIndex) {
-    float elapsed = std::chrono::duration<float>(
-                        std::chrono::steady_clock::now() - mStartTime)
-                        .count();
-
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), elapsed * glm::radians(90.0f),
-                            glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(glm::vec3(mCameraPosition[0], mCameraPosition[1],
                                     mCameraPosition[2]),
-                           glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+                           glm::vec3(0.0f, 1.0f, 0.0f),
+                           glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(
         glm::radians(45.0f),
         static_cast<float>(mSwapChain.extent().width) /
@@ -733,7 +884,19 @@ void VulkanBackend::record_command_buffer(uint32_t imageIndex,
     cmd.bindIndexBuffer(mIndexBuffer, 0, vk::IndexType::eUint32);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, mPipelineLayout, 0,
                            *mDescriptorSets[frameIndex], nullptr);
-    cmd.drawIndexed(static_cast<uint32_t>(mIndices.size()), 1, 0, 0, 0);
+
+    // Object transforms are sampled in update(), not derived here: animation
+    // state must be settled before recording so it can also feed the mapped
+    // joint-matrix buffer without a one-frame skew.
+    for (size_t i = 0; i < mObjects.size(); ++i) {
+        PushConstants push{};
+        push.model = mObjects[i].transform.toMatrix();
+        push.jointOffset = static_cast<uint32_t>(i) * mJointsPerInstance;
+        cmd.pushConstants<PushConstants>(
+            mPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, push);
+        cmd.drawIndexed(static_cast<uint32_t>(mModel.mesh.indices.size()), 1,
+                        0, 0, 0);
+    }
     cmd.endRendering();
 
     transition_image_layout(frameIndex, imageIndex,
@@ -768,6 +931,7 @@ void VulkanBackend::render_frame() {
     mDevice.logicalDevice().resetFences(*mInFlightFences[mFrameIndex]);
     mCommandBuffers[mFrameIndex].reset();
     update_uniform_buffer(mFrameIndex);
+    update_joint_buffer(mFrameIndex);
     record_command_buffer(imageIndex, mFrameIndex);
 
     vk::PipelineStageFlags waitDestinationStageMask(

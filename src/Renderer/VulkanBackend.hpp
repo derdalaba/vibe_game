@@ -9,7 +9,9 @@
 // or
 #include <vulkan/vulkan_raii.hpp>
 
+#include "Animation.hpp"
 #include "Device.hpp"
+#include "GltfLoader.hpp"
 #include "Shader.hpp"
 #include "Surface.hpp"
 #include "SwapChain.hpp"
@@ -17,14 +19,34 @@
 
 namespace Renderer {
 
+struct RenderObject {
+    Core::Transform transform;      // placement in the world
+    const Core::AnimationClip* placementClip = nullptr;  // optional rigid anim
+    float animationTime = 0.0f;    // seconds into its own clip
+    float animationOffset = 0.0f;  // phase offset so instances differ
+};
+
 class VulkanBackend {
    public:
     VulkanBackend(std::shared_ptr<Surface> surface);
     ~VulkanBackend();
 
+    void update(float deltaTime);
     void render_frame();
     void notifyFramebufferResized();
     void setCameraPosition(float x, float y, float z);
+    void addObject(float x, float y, float z);
+
+    // Drives an object's placement from a keyframe clip. The clip is owned by
+    // the caller and must outlive the object. Channel target node 0 is used for
+    // the object's own transform.
+    void setObjectClip(size_t objectIndex, const Core::AnimationClip* clip,
+                       float phaseOffset = 0.0f);
+
+    // Clips loaded from the glTF asset, for the app to play or inspect.
+    const std::vector<Core::AnimationClip>& modelClips() const {
+        return mModel.clips;
+    }
 
    private:
     void create_instance();
@@ -37,9 +59,11 @@ class VulkanBackend {
     void create_texture_image_view();
     void create_texture_sampler();
     void create_uniform_buffers();
+    void create_joint_buffers();
     void create_descriptor_pool();
     void create_descriptor_sets();
     void update_uniform_buffer(uint32_t frameIndex);
+    void update_joint_buffer(uint32_t frameIndex);
     void copyBuffer(const vk::raii::Buffer& srcBuffer,
                     const vk::raii::Buffer& dstBuffer,
                     vk::DeviceSize size);
@@ -71,10 +95,15 @@ class VulkanBackend {
 
    private:
     static constexpr uint32_t kMaxFramesInFlight = 2;
+    // The joint-matrix buffers are sized once at init, but addObject() may be
+    // called afterwards, so the instance count is capped rather than left as a
+    // latent overflow.
+    static constexpr uint32_t kMaxSkinnedInstances = 16;
 
     std::shared_ptr<Surface> mSurface;
     vk::raii::Context mContext;
     vk::raii::Instance mInstance = nullptr;
+    vk::raii::DebugUtilsMessengerEXT mDebugMessenger = nullptr;
     Device mDevice;
     SwapChain mSwapChain;
 
@@ -83,8 +112,8 @@ class VulkanBackend {
     vk::raii::PipelineLayout mPipelineLayout = nullptr;
     vk::raii::Pipeline mGraphicsPipeline = nullptr;
 
-    std::vector<Vertex> mVertices;
-    std::vector<uint32_t> mIndices;
+    Core::LoadedModel mModel;
+    std::vector<glm::mat4> mJointMatrices;  // scratch, refilled per frame
 
     vk::raii::Buffer mStagingBuffer = nullptr;
     vk::raii::Buffer mVertexBuffer = nullptr;
@@ -106,8 +135,15 @@ class VulkanBackend {
     std::vector<vk::raii::Buffer> mUniformBuffers;
     std::vector<vk::raii::DeviceMemory> mUniformBuffersMemory;
     std::vector<void*> mUniformBuffersMapped;
+
+    std::vector<vk::raii::Buffer> mJointBuffers;
+    std::vector<vk::raii::DeviceMemory> mJointBuffersMemory;
+    std::vector<void*> mJointBuffersMapped;
+    vk::DeviceSize mJointBufferSize = 0;
+    uint32_t mJointsPerInstance = 1;
     std::chrono::steady_clock::time_point mStartTime;
-    float mCameraPosition[3] = {2.0f, 2.0f, 2.0f};
+    float mSkinTime = 0.0f;
+    float mCameraPosition[3] = {0.0f, 1.0f, 4.0f};
 
     std::vector<vk::raii::Semaphore> mPresentCompleteSemaphores;
     std::vector<vk::raii::Semaphore> mRenderFinishedSemaphores;
@@ -116,5 +152,6 @@ class VulkanBackend {
 
     std::vector<Shader> mShaders;
     bool mFramebufferResized = false;
+    std::vector<RenderObject> mObjects;
 };
 }  // namespace Renderer
