@@ -38,6 +38,18 @@ add_optional_module(extern/glfw glfw)
 if (TARGET glfw AND NOT TARGET External::GLFW)
 	add_library(External::GLFW ALIAS glfw)
 endif()
+
+if (EXISTS "${CMAKE_SOURCE_DIR}/extern/spdlog/CMakeLists.txt")
+	add_subdirectory(extern/spdlog)
+	if (TARGET spdlog::spdlog AND NOT TARGET External::spdlog)
+		add_library(External::spdlog INTERFACE IMPORTED)
+		set_target_properties(External::spdlog PROPERTIES
+			INTERFACE_LINK_LIBRARIES spdlog::spdlog)
+	endif()
+else()
+	message(FATAL_ERROR "spdlog submodule not found at extern/spdlog")
+endif()
+
 add_optional_module(src/Core Core)      # Core foundation
 add_optional_module(src/Renderer Renderer)  # Graphics system
 add_optional_module(src/Physics Physics)   # Physics engine

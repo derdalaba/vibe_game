@@ -29,6 +29,8 @@ target_include_directories(Core PUBLIC
     ${CMAKE_SOURCE_DIR}/extern/tinygltf
 )
 
+target_link_libraries(Core PUBLIC External::spdlog)
+
 target_compile_options(Core PRIVATE -Wall -Wextra)
 
 # tinygltf (and the nlohmann json.hpp it bundles) is third-party and noisy under

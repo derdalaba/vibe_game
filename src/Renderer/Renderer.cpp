@@ -4,9 +4,10 @@
 
 namespace Renderer {
 
-Renderer::Renderer()
+Renderer::Renderer(std::string modelPath)
     : mSurface(std::make_shared<Surface>()),
-      mBackend(std::make_unique<VulkanBackend>(mSurface)) {}
+      mBackend(
+          std::make_unique<VulkanBackend>(mSurface, std::move(modelPath))) {}
 
 Renderer::~Renderer() = default;
 
@@ -44,6 +45,10 @@ void Renderer::setObjectClip(size_t objectIndex,
                              const Core::AnimationClip* clip,
                              float phaseOffset) {
     mBackend->setObjectClip(objectIndex, clip, phaseOffset);
+}
+
+void Renderer::switchModel(const std::string& modelPath) {
+    mBackend->switchModel(modelPath);
 }
 
 const std::vector<Core::AnimationClip>& Renderer::modelClips() const {

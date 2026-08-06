@@ -2,11 +2,13 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
 #include <vector>
 
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #include <vulkan/vulkan.hpp>
 // or
+#include <spdlog/spdlog.h>
 #include <vulkan/vulkan_raii.hpp>
 
 #include "Animation.hpp"
@@ -20,15 +22,15 @@
 namespace Renderer {
 
 struct RenderObject {
-    Core::Transform transform;      // placement in the world
+    Core::Transform transform;                           // placement in the world
     const Core::AnimationClip* placementClip = nullptr;  // optional rigid anim
-    float animationTime = 0.0f;    // seconds into its own clip
-    float animationOffset = 0.0f;  // phase offset so instances differ
+    float animationTime = 0.0f;                          // seconds into its own clip
+    float animationOffset = 0.0f;                        // phase offset so instances differ
 };
 
 class VulkanBackend {
    public:
-    VulkanBackend(std::shared_ptr<Surface> surface);
+    VulkanBackend(std::shared_ptr<Surface> surface, std::string modelPath = {});
     ~VulkanBackend();
 
     void update(float deltaTime);
@@ -40,19 +42,19 @@ class VulkanBackend {
     // Drives an object's placement from a keyframe clip. The clip is owned by
     // the caller and must outlive the object. Channel target node 0 is used for
     // the object's own transform.
-    void setObjectClip(size_t objectIndex, const Core::AnimationClip* clip,
-                       float phaseOffset = 0.0f);
+    void setObjectClip(size_t objectIndex, const Core::AnimationClip* clip, float phaseOffset = 0.0f);
+    void switchModel(const std::string& modelPath);
 
     // Clips loaded from the glTF asset, for the app to play or inspect.
-    const std::vector<Core::AnimationClip>& modelClips() const {
-        return mModel.clips;
-    }
+    const std::vector<Core::AnimationClip>& modelClips() const { return mModel.clips; }
 
    private:
+    void destroy_resources();
     void create_instance();
     void create_descriptor_set_layout();
     void create_graphics_pipeline();
-    void load_model();
+    void load_model(const std::string& modelPath);
+    void recreate_model_resources();
     void create_vertex_buffer();
     void create_index_buffer();
     void create_texture_image();
@@ -64,33 +66,22 @@ class VulkanBackend {
     void create_descriptor_sets();
     void update_uniform_buffer(uint32_t frameIndex);
     void update_joint_buffer(uint32_t frameIndex);
-    void copyBuffer(const vk::raii::Buffer& srcBuffer,
-                    const vk::raii::Buffer& dstBuffer,
-                    vk::DeviceSize size);
-    void copyBufferToImage(const vk::raii::Buffer& buffer,
-                           const vk::raii::Image& image, uint32_t width,
-                           uint32_t height);
-    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
-    std::pair<vk::raii::Image, vk::raii::DeviceMemory> create_image(
-        uint32_t width, uint32_t height, vk::Format format,
-        vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-        vk::MemoryPropertyFlags properties);
-    void transition_texture_image_layout(const vk::raii::Image& image,
-                                         vk::ImageLayout oldLayout,
-                                         vk::ImageLayout newLayout);
-    uint32_t findMemoryType(uint32_t typeFilter,
-                             vk::MemoryPropertyFlags properties);
+    void copyBuffer(const vk::raii::Buffer& srcBuffer, const vk::raii::Buffer& dstBuffer, vk::DeviceSize size);
+    void copyBufferToImage(const vk::raii::Buffer& buffer, const vk::raii::Image& image, uint32_t width, uint32_t height);
+    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
+                                                                      vk::MemoryPropertyFlags properties);
+    std::pair<vk::raii::Image, vk::raii::DeviceMemory> create_image(uint32_t width, uint32_t height, vk::Format format,
+                                                                    vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+                                                                    vk::MemoryPropertyFlags properties);
+    void transition_texture_image_layout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
     void create_command_pool_and_buffers();
     void create_sync_objects();
     void recreate_swap_chain();
     void record_command_buffer(uint32_t imageIndex, uint32_t frameIndex);
-    void transition_image_layout(uint32_t frameIndex, uint32_t imageIndex,
-                                  vk::ImageLayout oldLayout,
-                                  vk::ImageLayout newLayout,
-                                  vk::AccessFlags2 srcAccess,
-                                  vk::AccessFlags2 dstAccess,
-                                  vk::PipelineStageFlags2 srcStage,
-                                  vk::PipelineStageFlags2 dstStage);
+    void transition_image_layout(uint32_t frameIndex, uint32_t imageIndex, vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+                                 vk::AccessFlags2 srcAccess, vk::AccessFlags2 dstAccess, vk::PipelineStageFlags2 srcStage,
+                                 vk::PipelineStageFlags2 dstStage);
     void transition_depth_image_layout(uint32_t frameIndex);
 
    private:
@@ -100,7 +91,10 @@ class VulkanBackend {
     // latent overflow.
     static constexpr uint32_t kMaxSkinnedInstances = 16;
 
+    std::shared_ptr<spdlog::logger> mLogger;
+
     std::shared_ptr<Surface> mSurface;
+    std::string mModelPath;
     vk::raii::Context mContext;
     vk::raii::Instance mInstance = nullptr;
     vk::raii::DebugUtilsMessengerEXT mDebugMessenger = nullptr;

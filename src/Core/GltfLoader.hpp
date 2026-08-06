@@ -15,6 +15,11 @@ struct LoadedModel {
     std::vector<AnimationClip> clips;
 };
 
+// Loads a supported model from disk. The current implementation supports
+// .gltf/.glb directly and exposes a single entry point so .fbx can be routed
+// through an Assimp-based importer later without changing the renderer.
+LoadedModel loadModel(const std::string& path);
+
 // Loads a .gltf (JSON, optionally with base64 data URIs) or .glb, returning
 // Vulkan-free plain data. Throws std::runtime_error on failure.
 //

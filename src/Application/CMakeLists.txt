@@ -14,6 +14,7 @@ target_link_libraries(GameApp PRIVATE
     Physics 
     Core
     Audio
+    External::spdlog
 )
 
 target_include_directories(GameApp PRIVATE 

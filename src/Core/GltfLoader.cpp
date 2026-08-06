@@ -10,6 +10,7 @@
 #include <tiny_gltf.h>
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
 namespace Core {
@@ -59,12 +60,13 @@ View makeView(const tinygltf::Model& model, int accessorIndex,
     }
 
     View view;
-    view.data = buffer.data.data() + bufferView.byteOffset + accessor.byteOffset;
+    view.data =
+        buffer.data.data() + bufferView.byteOffset + accessor.byteOffset;
     view.stride = static_cast<size_t>(stride);
     view.count = accessor.count;
     view.componentType = accessor.componentType;
-    view.numComponents = tinygltf::GetNumComponentsInType(
-        static_cast<uint32_t>(accessor.type));
+    view.numComponents =
+        tinygltf::GetNumComponentsInType(static_cast<uint32_t>(accessor.type));
     view.normalized = accessor.normalized;
     return view;
 }
@@ -83,7 +85,8 @@ float readFloat(const View& view, size_t element, int component) {
     switch (view.componentType) {
         case TINYGLTF_COMPONENT_TYPE_FLOAT: {
             float value = 0.0f;
-            memcpy(&value, base + sizeof(float) * static_cast<size_t>(component),
+            memcpy(&value,
+                   base + sizeof(float) * static_cast<size_t>(component),
                    sizeof(float));
             return value;
         }
@@ -94,7 +97,8 @@ float readFloat(const View& view, size_t element, int component) {
         }
         case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
             uint16_t raw = 0;
-            memcpy(&raw, base + sizeof(uint16_t) * static_cast<size_t>(component),
+            memcpy(&raw,
+                   base + sizeof(uint16_t) * static_cast<size_t>(component),
                    sizeof(uint16_t));
             return view.normalized ? static_cast<float>(raw) / 65535.0f
                                    : static_cast<float>(raw);
@@ -117,13 +121,15 @@ uint32_t readUint(const View& view, size_t element, int component) {
             return base[component];
         case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
             uint16_t raw = 0;
-            memcpy(&raw, base + sizeof(uint16_t) * static_cast<size_t>(component),
+            memcpy(&raw,
+                   base + sizeof(uint16_t) * static_cast<size_t>(component),
                    sizeof(uint16_t));
             return raw;
         }
         case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
             uint32_t raw = 0;
-            memcpy(&raw, base + sizeof(uint32_t) * static_cast<size_t>(component),
+            memcpy(&raw,
+                   base + sizeof(uint32_t) * static_cast<size_t>(component),
                    sizeof(uint32_t));
             return raw;
         }
@@ -141,9 +147,10 @@ Transform nodeTransform(const tinygltf::Node& node) {
     }
     Transform transform;
     if (node.translation.size() == 3) {
-        transform.translation = glm::vec3(static_cast<float>(node.translation[0]),
-                                         static_cast<float>(node.translation[1]),
-                                         static_cast<float>(node.translation[2]));
+        transform.translation =
+            glm::vec3(static_cast<float>(node.translation[0]),
+                      static_cast<float>(node.translation[1]),
+                      static_cast<float>(node.translation[2]));
     }
     if (node.rotation.size() == 4) {
         // glTF stores xyzw; glm's quat constructor takes (w, x, y, z).
@@ -162,16 +169,21 @@ Transform nodeTransform(const tinygltf::Node& node) {
 
 Path parsePath(const std::string& path, bool& supported) {
     supported = true;
-    if (path == "translation") return Path::Translation;
-    if (path == "rotation") return Path::Rotation;
-    if (path == "scale") return Path::Scale;
+    if (path == "translation")
+        return Path::Translation;
+    if (path == "rotation")
+        return Path::Rotation;
+    if (path == "scale")
+        return Path::Scale;
     supported = false;  // "weights" (morph targets) is out of scope
     return Path::Translation;
 }
 
 Interpolation parseInterpolation(const std::string& mode) {
-    if (mode == "STEP") return Interpolation::Step;
-    if (mode == "CUBICSPLINE") return Interpolation::CubicSpline;
+    if (mode == "STEP")
+        return Interpolation::Step;
+    if (mode == "CUBICSPLINE")
+        return Interpolation::CubicSpline;
     return Interpolation::Linear;
 }
 
@@ -194,9 +206,12 @@ void loadPrimitive(const tinygltf::Model& model,
     const bool hasWeights = weightsIt != primitive.attributes.end();
 
     View texCoords, joints, weights;
-    if (hasTex) texCoords = makeView(model, texIt->second, "TEXCOORD_0");
-    if (hasJoints) joints = makeView(model, jointsIt->second, "JOINTS_0");
-    if (hasWeights) weights = makeView(model, weightsIt->second, "WEIGHTS_0");
+    if (hasTex)
+        texCoords = makeView(model, texIt->second, "TEXCOORD_0");
+    if (hasJoints)
+        joints = makeView(model, jointsIt->second, "JOINTS_0");
+    if (hasWeights)
+        weights = makeView(model, weightsIt->second, "WEIGHTS_0");
 
     const uint32_t baseVertex = static_cast<uint32_t>(out.vertices.size());
 
@@ -241,6 +256,34 @@ void loadPrimitive(const tinygltf::Model& model,
 }
 
 }  // namespace
+
+std::string toLower(std::string value) {
+    std::transform(
+        value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+
+LoadedModel loadModel(const std::string& path) {
+    const auto dot = path.find_last_of('.');
+    const std::string extension = dot == std::string::npos
+                                      ? std::string()
+                                      : toLower(path.substr(dot + 1));
+
+    if (extension == "gltf" || extension == "glb") {
+        return loadGltf(path);
+    }
+
+    if (extension == "fbx") {
+        throw std::runtime_error(
+            "FBX support is not wired in yet; add an Assimp-based importer "
+            "to load " +
+            path);
+    }
+
+    throw std::runtime_error("unsupported model format '" + extension +
+                             "' for " + path);
+}
 
 LoadedModel loadGltf(const std::string& path) {
     tinygltf::Model model;
@@ -301,14 +344,14 @@ LoadedModel loadGltf(const std::string& path) {
 
     // --- skin --------------------------------------------------------------
     if (node.skin >= 0) {
-        const tinygltf::Skin& skin = model.skins[static_cast<size_t>(node.skin)];
+        const tinygltf::Skin& skin =
+            model.skins[static_cast<size_t>(node.skin)];
         result.skeleton.jointNodes = skin.joints;
-        result.skeleton.inverseBind.assign(skin.joints.size(),
-                                           glm::mat4(1.0f));
+        result.skeleton.inverseBind.assign(skin.joints.size(), glm::mat4(1.0f));
         // inverseBindMatrices is optional; absent means identity per joint.
         if (skin.inverseBindMatrices >= 0) {
-            const View ibm =
-                makeView(model, skin.inverseBindMatrices, "inverseBindMatrices");
+            const View ibm = makeView(model, skin.inverseBindMatrices,
+                                      "inverseBindMatrices");
             const size_t count =
                 std::min(ibm.count, result.skeleton.inverseBind.size());
             for (size_t j = 0; j < count; ++j) {
@@ -344,7 +387,8 @@ LoadedModel loadGltf(const std::string& path) {
             out.path = pathKind;
             out.track.interp = parseInterpolation(sampler.interpolation);
 
-            const View input = makeView(model, sampler.input, "animation input");
+            const View input =
+                makeView(model, sampler.input, "animation input");
             const View output =
                 makeView(model, sampler.output, "animation output");
 
@@ -354,9 +398,9 @@ LoadedModel loadGltf(const std::string& path) {
             }
             out.track.values.reserve(output.count);
             for (size_t k = 0; k < output.count; ++k) {
-                out.track.values.push_back(
-                    glm::vec4(readFloat(output, k, 0), readFloat(output, k, 1),
-                              readFloat(output, k, 2), readFloat(output, k, 3)));
+                out.track.values.push_back(glm::vec4(
+                    readFloat(output, k, 0), readFloat(output, k, 1),
+                    readFloat(output, k, 2), readFloat(output, k, 3)));
             }
             if (!out.track.times.empty()) {
                 clip.duration = std::max(clip.duration, out.track.times.back());

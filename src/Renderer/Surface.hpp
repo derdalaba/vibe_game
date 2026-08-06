@@ -22,14 +22,12 @@ class Surface {
 
     void createWindow(int width, int height, const char* title);
     void createSurface(const vk::raii::Instance& instance);
+    void cleanup();
     const vk::raii::SurfaceKHR& getSurface() const { return mSurface; }
     GLFWwindow* getWindow() const { return mWindowHandle; }
     bool isKeyPressed(int key) const {
         return glfwGetKey(mWindowHandle, key) == GLFW_PRESS;
     }
-
-   private:
-    void cleanup();
 
    private:
     GLFWwindow* mWindowHandle = nullptr;

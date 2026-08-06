@@ -5,14 +5,12 @@
 
 namespace Renderer {
 
-void Device::initialize(const vk::raii::Instance& instance,
-                         const vk::raii::SurfaceKHR& surface) {
+void Device::initialize(const vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface) {
     select_physical_device(instance, surface);
     create_logical_device(surface);
 }
 
-void Device::select_physical_device(const vk::raii::Instance& instance,
-                                     const vk::raii::SurfaceKHR& surface) {
+void Device::select_physical_device(const vk::raii::Instance& instance, const vk::raii::SurfaceKHR& surface) {
     auto physicalDevices = vk::raii::PhysicalDevices(instance);
     if (physicalDevices.empty()) {
         throw std::runtime_error("Error: No Vulkan-capable devices found.");
@@ -26,8 +24,7 @@ void Device::select_physical_device(const vk::raii::Instance& instance,
         uint32_t score = 0;
 
         // Discrete GPUs have a significant performance advantage
-        if (deviceProperties.deviceType ==
-            vk::PhysicalDeviceType::eDiscreteGpu) {
+        if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
             score += 1000;
         }
 
@@ -50,16 +47,13 @@ void Device::select_physical_device(const vk::raii::Instance& instance,
 }
 
 void Device::create_logical_device(const vk::raii::SurfaceKHR& surface) {
-    std::vector<vk::QueueFamilyProperties> queueFamilyProperties =
-        mPhysicalDevice.getQueueFamilyProperties();
+    std::vector<vk::QueueFamilyProperties> queueFamilyProperties = mPhysicalDevice.getQueueFamilyProperties();
 
     // get the first index into queueFamilyProperties which supports both
     // graphics and present
     uint32_t queueIndex = ~0;
-    for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size();
-         ++qfpIndex) {
-        if ((queueFamilyProperties[qfpIndex].queueFlags &
-             vk::QueueFlagBits::eGraphics) &&
+    for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size(); ++qfpIndex) {
+        if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) &&
             mPhysicalDevice.getSurfaceSupportKHR(qfpIndex, *surface)) {
             // found a queue family that supports both graphics and present
             queueIndex = qfpIndex;
@@ -67,37 +61,26 @@ void Device::create_logical_device(const vk::raii::SurfaceKHR& surface) {
         }
     }
     if (queueIndex == ~0) {
-        throw std::runtime_error(
-            "Could not find a queue for graphics and present -> terminating");
+        throw std::runtime_error("Could not find a queue for graphics and present -> terminating");
     }
 
     // query for Vulkan 1.3 features
-    vk::StructureChain<vk::PhysicalDeviceFeatures2,
-                       vk::PhysicalDeviceVulkan11Features,
-                       vk::PhysicalDeviceVulkan13Features,
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features, vk::PhysicalDeviceVulkan13Features,
                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
         featureChain = {
-            {.features = {.samplerAnisotropy = true}},  // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters =
-                 true},  // vk::PhysicalDeviceVulkan11Features
-            {.synchronization2 = true,
-             .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState =
-                 true}  // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+            {.features = {.samplerAnisotropy = true}},             // vk::PhysicalDeviceFeatures2
+            {.shaderDrawParameters = true},                        // vk::PhysicalDeviceVulkan11Features
+            {.synchronization2 = true, .dynamicRendering = true},  // vk::PhysicalDeviceVulkan13Features
+            {.extendedDynamicState = true}                         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         };
 
     float queuePriority = 0.5f;
-    vk::DeviceQueueCreateInfo deviceQueueCreateInfo{
-        .queueFamilyIndex = queueIndex,
-        .queueCount = 1,
-        .pQueuePriorities = &queuePriority};
-    vk::DeviceCreateInfo deviceCreateInfo{
-        .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &deviceQueueCreateInfo,
-        .enabledExtensionCount =
-            static_cast<uint32_t>(mRequiredDeviceExtension.size()),
-        .ppEnabledExtensionNames = mRequiredDeviceExtension.data()};
+    vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = queueIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
+    vk::DeviceCreateInfo deviceCreateInfo{.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+                                          .queueCreateInfoCount = 1,
+                                          .pQueueCreateInfos = &deviceQueueCreateInfo,
+                                          .enabledExtensionCount = static_cast<uint32_t>(mRequiredDeviceExtension.size()),
+                                          .ppEnabledExtensionNames = mRequiredDeviceExtension.data()};
 
     mLogicalDevice = vk::raii::Device(mPhysicalDevice, deviceCreateInfo);
     mGraphicsQueue = vk::raii::Queue(mLogicalDevice, queueIndex, 0);
