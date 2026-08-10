@@ -1,4 +1,4 @@
-// Single translation unit that compiles tinygltf's implementation.
+// Single translation unit that compiles tinygltf v3's implementation.
 //
 // stb is deliberately disabled here: Renderer/VulkanBackend.cpp already defines
 // STB_IMAGE_IMPLEMENTATION against the extern/stb submodule. Letting tinygltf
@@ -6,9 +6,10 @@
 // tinygltf bundles an older stb (v2.08) which could silently win on the include
 // path. glTF image decoding is not needed yet; if it becomes needed, register a
 // decoder via TinyGLTF::SetImageLoader rather than re-enabling these.
-#define TINYGLTF_IMPLEMENTATION
+#define TINYGLTF3_IMPLEMENTATION
 #define TINYGLTF_NO_STB_IMAGE
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #define TINYGLTF_NO_INCLUDE_STB_IMAGE
 #define TINYGLTF_NO_INCLUDE_STB_IMAGE_WRITE
-#include <tiny_gltf.h>
+#define TINYGLTF3_ENABLE_FS
+#include <tiny_gltf_v3.h>

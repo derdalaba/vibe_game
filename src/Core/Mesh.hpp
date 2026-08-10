@@ -18,12 +18,10 @@ namespace Core {
 struct Vertex {
     float pos[3];
     float texCoord[2];
-    uint32_t joints[4];
+    uint32_t joints[4];  // might cause a bug when more the 4 bones are used, but for now we only support 4 bones per vertex
     float weights[4];
 
-    bool operator==(const Vertex& other) const {
-        return memcmp(this, &other, sizeof(Vertex)) == 0;
-    }
+    bool operator==(const Vertex& other) const { return memcmp(this, &other, sizeof(Vertex)) == 0; }
 };
 
 static_assert(sizeof(Vertex) == 52,
@@ -32,8 +30,7 @@ static_assert(sizeof(Vertex) == 52,
 
 struct MeshVertexHash {
     size_t operator()(const Vertex& vertex) const {
-        std::string_view bytes(reinterpret_cast<const char*>(&vertex),
-                               sizeof(Vertex));
+        std::string_view bytes(reinterpret_cast<const char*>(&vertex), sizeof(Vertex));
         return std::hash<std::string_view>{}(bytes);
     }
 };

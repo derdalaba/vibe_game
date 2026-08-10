@@ -15,10 +15,18 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <source_location>
 #include <stdexcept>
 #include <string>
 
 namespace Renderer {
+namespace {
+
+[[noreturn]] void throwWithLocation(std::string message, std::source_location location = std::source_location::current()) {
+    throw std::runtime_error(std::string(location.function_name()) + ": " + std::move(message));
+}
+
+}  // namespace
 
 #ifdef NDEBUG
 static constexpr bool kEnableValidation = false;
@@ -110,6 +118,7 @@ void VulkanBackend::destroy_resources() {
     mInFlightFences.clear();
 
     mDescriptorSets.clear();
+    mLogger->info("Destroying descriptor pool...");
     mDescriptorPool = nullptr;
 
     mJointBuffers.clear();
@@ -119,11 +128,13 @@ void VulkanBackend::destroy_resources() {
     mUniformBuffersMemory.clear();
     mUniformBuffersMapped.clear();
 
+    mLogger->info("Destroying texture sampler...");
     mTextureSampler = nullptr;
     mTextureImageView = nullptr;
     mTextureImage = nullptr;
     mTextureImageMemory = nullptr;
 
+    mLogger->info("Destroying buffers...");
     mIndexBuffer = nullptr;
     mIndexBufferMemory = nullptr;
     mVertexBuffer = nullptr;
@@ -131,6 +142,7 @@ void VulkanBackend::destroy_resources() {
     mStagingBuffer = nullptr;
     mStagingBufferMemory = nullptr;
 
+    mLogger->info("Destroying graphics pipeline...");
     mGraphicsPipeline = nullptr;
     mPipelineLayout = nullptr;
     mShaders.clear();
@@ -169,7 +181,7 @@ void VulkanBackend::addObject(float x, float y, float z) {
 
 void VulkanBackend::setObjectClip(size_t objectIndex, const Core::AnimationClip* clip, float phaseOffset) {
     if (objectIndex >= mObjects.size()) {
-        throw std::runtime_error("setObjectClip: object index out of range");
+        throwWithLocation("setObjectClip: object index out of range");
     }
     mObjects[objectIndex].placementClip = clip;
     mObjects[objectIndex].animationOffset = phaseOffset;
@@ -220,7 +232,7 @@ void VulkanBackend::update(float deltaTime) {
         return;
     }
     if (mObjects.size() > kMaxSkinnedInstances) {
-        throw std::runtime_error(
+        throwWithLocation(
             "more skinned instances than the joint buffer was sized for; raise "
             "kMaxSkinnedInstances");
     }
@@ -255,7 +267,7 @@ void VulkanBackend::create_instance() {
     if (!glfwExtensions) {
         const char* description = nullptr;
         glfwGetError(&description);
-        throw std::runtime_error("glfwGetRequiredInstanceExtensions failed: " + std::string(description ? description : "unknown error"));
+        throwWithLocation("glfwGetRequiredInstanceExtensions failed: " + std::string(description ? description : "unknown error"));
     }
 
     auto extensionProperties = mContext.enumerateInstanceExtensionProperties();
@@ -263,7 +275,7 @@ void VulkanBackend::create_instance() {
         if (std::ranges::none_of(extensionProperties, [glfwExtension = glfwExtensions[i]](auto const& extensionProperty) {
                 return strcmp(extensionProperty.extensionName, glfwExtension) == 0;
             })) {
-            throw std::runtime_error("Required GLFW extension not supported: " + std::string(glfwExtensions[i]));
+            throwWithLocation("Required GLFW extension not supported: " + std::string(glfwExtensions[i]));
         }
     }
 
@@ -390,7 +402,7 @@ void VulkanBackend::load_model(const std::string& modelPath) {
     mModelPath = resolvedPath;
     mModel = Core::loadModel(resolvedPath);
     if (mModel.mesh.vertices.empty() || mModel.mesh.indices.empty()) {
-        throw std::runtime_error("loaded model has no geometry");
+        throwWithLocation("loaded model has no geometry");
     }
     mJointMatrices.assign(std::max<size_t>(mModel.skeleton.jointCount(), 1), glm::mat4(1.0f));
 }
@@ -402,7 +414,7 @@ uint32_t VulkanBackend::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFl
             return i;
         }
     }
-    throw std::runtime_error("failed to find suitable memory type!");
+    throwWithLocation("failed to find suitable memory type!");
 }
 
 void VulkanBackend::copyBuffer(vk::raii::Buffer const& srcBuffer, vk::raii::Buffer const& dstBuffer, vk::DeviceSize size) {
@@ -501,7 +513,7 @@ void VulkanBackend::create_texture_image() {
     std::string texturePath = std::string(TEXTURE_DIR) + "/checkerboard.ppm";
     stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     if (!pixels) {
-        throw std::runtime_error("failed to load texture image: " + texturePath);
+        throwWithLocation("failed to load texture image: " + texturePath);
     }
     vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(texWidth) * texHeight * 4;
 
@@ -842,7 +854,7 @@ void VulkanBackend::render_frame() {
 
     auto fenceResult = mDevice.logicalDevice().waitForFences(*mInFlightFences[mFrameIndex], vk::True, UINT64_MAX);
     if (fenceResult != vk::Result::eSuccess) {
-        throw std::runtime_error("failed to wait for fence!");
+        throwWithLocation("failed to wait for fence!");
     }
 
     auto [acquireResult, imageIndex] = mSwapChain.handle().acquireNextImage(UINT64_MAX, *mPresentCompleteSemaphores[mFrameIndex], nullptr);

@@ -79,21 +79,25 @@ Core::AnimationClip makeBobClip() {
 
 std::string resolveModelPath(const std::string& requested) {
     if (requested.empty()) {
-        return {};
+        throw std::runtime_error("No model path provided; please specify a glTF or GLB file path as the first command-line argument.");
     }
 
     const std::filesystem::path requestedPath(requested);
     if (std::filesystem::exists(requestedPath)) {
+        spdlog::get("VibeGame")->info("Using requested model path {}", requestedPath.string());
         return requestedPath.string();
     }
 
     const std::filesystem::path repoRelative = std::filesystem::path("src") / "Models" / requestedPath.filename();
     if (std::filesystem::exists(repoRelative)) {
+        spdlog::get("VibeGame")->warn("Could not find requested model {}, using repo-relative path {}", requested, repoRelative.string());
         return repoRelative.string();
     }
 
     const std::filesystem::path parentRelative = std::filesystem::path("..") / "src" / "Models" / requestedPath.filename();
     if (std::filesystem::exists(parentRelative)) {
+        spdlog::get("VibeGame")
+            ->warn("Could not find requested model {}, using parent-relative path {}", requested, parentRelative.string());
         return parentRelative.string();
     }
 
@@ -104,9 +108,11 @@ std::string resolveModelPath(const std::string& requested) {
     };
     for (const auto& candidate : defaults) {
         if (std::filesystem::exists(candidate)) {
+            spdlog::get("VibeGame")->warn("Could not find requested model {}, falling back to default {}", requested, candidate.string());
             return candidate.string();
         }
     }
+    spdlog::get("VibeGame")->warn("Could not find requested model {}, falling back to default", requested);
     return std::string("src/Models/SimpleSkin.gltf");
 }
 
@@ -120,8 +126,8 @@ int main(int argc, char** argv) {
     spdlog::register_logger(logger);
     spdlog::set_default_logger(logger);
     try {
-        const std::string requestedPath = argc > 1 ? argv[1] : "";
-        const std::string alternatePath = argc > 2 ? argv[2] : "";
+        const std::string requestedPath = argc > 1 ? argv[1] : "I:\\git\\vibe_game\\src\\Models\\SimpleSkin.gltf";
+        const std::string alternatePath = resolveModelPath(argc > 2 ? argv[2] : "I:\\git\\vibe_game\\src\\Models\\Entry.glb");
         const std::string modelPath = resolveModelPath(requestedPath);
         logger->info("Loading model: {}", modelPath);
 
